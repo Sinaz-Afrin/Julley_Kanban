@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ORG_ADMIN
+  TENANT_ADMIN
+  MEMBER
+}
+
+model Organization {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  tenants     Tenant[]
+  memberships Membership[]
+  boards      Board[]
+  @@map("organizations")
+}
+
+model Tenant {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid @map("organization_id")
+  name           String
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships    Membership[]
+  boards         Board[]
+  tasks          Task[]
+  activityLogs   ActivityLog[]
+  @@index([organizationId])
+  @@map("tenants")
+}
+
+model User {
+  id           String       @id @default(uuid()) @db.Uuid
+  name         String
+  email        String       @unique
+  passwordHash String       @map("password_hash")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  memberships  Membership[]
+  createdBoards Board[]     @relation("BoardCreator")
+  assignedTasks Task[]      @relation("TaskAssignee")
+  activityLogs ActivityLog[]
+  @@map("users")
+}
+
+model Membership {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @db.Uuid @map("user_id")
+  organizationId String       @db.Uuid @map("organization_id")
+  tenantId       String?      @db.Uuid @map("tenant_id")
+  role           Role         @default(MEMBER)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenant         Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([userId, organizationId, tenantId])
+  @@index([userId, tenantId])
+  @@map("memberships")
+}
+
+model Board {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid @map("organization_id")
+  tenantId       String       @db.Uuid @map("tenant_id")
+  name           String
+  description    String?
+  createdBy      String       @db.Uuid @map("created_by")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creator        User         @relation("BoardCreator", fields: [createdBy], references: [id])
+  columns        Column[]
+  tasks          Task[]
+  @@index([tenantId])
+  @@map("boards")
+}
+
+model Column {
+  id        String   @id @default(uuid()) @db.Uuid
+  boardId   String   @db.Uuid @map("board_id")
+  tenantId  String   @db.Uuid @map("tenant_id")
+  name      String
+  position  Int      @default(0)
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  @@index([boardId, position])
+  @@index([tenantId])
+  @@map("columns")
+}
+
+model Task {
+  id          String   @id @default(uuid()) @db.Uuid
+  boardId     String   @db.Uuid @map("board_id")
+  columnId    String   @db.Uuid @map("column_id")
+  tenantId    String   @db.Uuid @map("tenant_id")
+  title       String
+  description String?
+  assignedTo  String?  @db.Uuid @map("assigned_to")
+  position    Int      @default(0)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignee    User?    @relation("TaskAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  @@index([tenantId, columnId, position])
+  @@map("tasks")
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid @map("tenant_id")
+  userId     String   @db.Uuid @map("user_id")
+  entityType String   @map("entity_type")
+  entityId   String   @db.Uuid @map("entity_id")
+  action     String
+  details    Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id])
+  @@index([tenantId, createdAt])
+  @@map("activity_logs")
+}
